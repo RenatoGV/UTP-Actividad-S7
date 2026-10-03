@@ -60,3 +60,24 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    runs-on: self-hosted
+    needs: package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      packages: read
+    steps:
+      - name: Compute image name
+        id: img
+        run: echo "name=${{ env.REGISTRY }}/$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]'):${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Run container on Docker Desktop
+        run: |
+          docker pull --platform linux/amd64 ${{ steps.img.outputs.name }}
+          docker rm -f app || true
+          docker run -d --name app --platform linux/amd64 -p 8080:8080 ${{ steps.img.outputs.name }}
+          docker image prune -f
